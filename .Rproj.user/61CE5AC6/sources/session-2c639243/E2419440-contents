@@ -1,0 +1,28 @@
+default:
+    seed: 123
+
+database:
+    host: "123.56.29.19"
+    user: "xiebro"
+    pwd: "xgw229294"
+    database: "xiebro"
+    port: 3306
+    
+cache:
+    dbname: "xiebro"
+    tblname: "io_the_wisp_propmt"
+
+gemini:
+    api_token: "AIzaSyBWvTRGqL_xq35cSkHmqcCLoI7r6GaRRRc"
+    domain: "http://47.245.107.189/v1beta/models/"
+    text_model: "gemini-pro:generateContent"
+    temperature: 0
+    topK: 1
+    topP: 1
+    maxOutputTokens: 2048
+    embedding_model: "embedding-001:embedContent"
+    
+template:
+    embeddings: "embeddings.csv"
+    folder: "templates"
+

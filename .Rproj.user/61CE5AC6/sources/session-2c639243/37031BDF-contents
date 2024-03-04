@@ -1,0 +1,413 @@
+library(httr)
+library(rlang)
+source("src/helper.R")
+
+# 获取 tenant_access_token ---------------------------------------------------
+form_request_headers <- function() {
+  
+  addr <- "{domain}/auth/v3/tenant_access_token/internal"
+  get_tenant_token_url <- with(config_, stringr::str_glue(addr))
+  
+  response  <- 
+    httr::POST(
+      get_tenant_token_url,
+      body = list(
+        app_id = config_$app_id,
+        app_secret = config_$app_secret
+        ),
+      encode = "json"
+  )
+  
+  check_resp(response, "form_request_headers")
+  token <- purrr::pluck(content(response), "tenant_access_token")
+
+  add_headers(
+    Authorization = stringr::str_glue("Bearer {token}")
+    )
+}
+
+# Bitable API ------------------------------------------------------------------
+
+# 单页爬取多维表格，返回response对象
+res_bitbl <- function(app_token, tableID, page_token="") {
+  
+  api <- "{domain}/bitable/v1/apps/{app_token}/tables/{tableID}/records?page_token={page_token}&page_size=500"
+  url <- with(config_, stringr::str_glue(api))
+  
+  response <- 
+    httr::GET(
+      url,
+      config_$req_headers
+    )
+  
+  check_resp(response, "res_bitbl")
+  
+  return(response)
+}
+
+# 多页爬取多维表格，返回tibble数据框
+get_dat_from_bitbl <- function(app_token, tableID){
+
+  has_more <- TRUE
+  page_token = ""
+  df_ls <- list()
+  id_vec <- list()
+  
+  extra_flds_to_df <- \(resp){
+    purrr::pluck(content(resp), "data", "items") |>
+      map(pluck, "fields") |>
+      do.call(rbind, args = _) |>
+      as.tibble() |>
+      unnest(cols = everything())
+  }
+  
+  extr_ids_to_vec <- \(resp){
+    purrr::pluck(content(resp), "data", "items") |>
+      map(pluck, "record_id") |>
+      unlist()
+  }
+  
+  while(has_more == TRUE){
+    response <- res_bitbl(app_token, tableID, page_token)
+    page_token <- purrr::pluck(content(response), "data", "page_token")
+    has_more <- purrr::pluck(content(response), "data", "has_more")
+    df_ls <- c(df_ls,  list(extra_flds_to_df(response)))
+    id_vec <- c(id_vec, c(extr_ids_to_vec(response)))
+  }
+  
+  result <- 
+    list(data = bind_rows(df_ls),
+         ids = unlist(id_vec))
+  
+  return(result)
+}
+
+# 向多维表格推送json
+push_bitbl <- function(app_token, tableID, records){
+  
+  api <- "{domain}/bitable/v1/apps/{app_token}/tables/{tableID}/records/batch_create"
+  url <- with(config_, stringr::str_glue(api))
+  
+  response <- 
+    httr::POST(
+      url,
+      config_$req_headers,
+      body = jsonlite::toJSON(list(records = records), auto_unbox = TRUE)
+    )
+  
+  check_resp(response, "push_bitbl")
+}
+
+
+# 向多维表格推送dataframe
+push_df_to_bitbl <- function(app_token, tableID, df) {
+  if(nrow(df) == 0) send_error_msg("Failed: push_df_to_bitbl, nrow(df) is 0")
+  
+  # 分页处理，解决接口的500行限制问题
+  chunk_size <- 500
+  df_ls <- split(df, ceiling(seq_along(df[,1]) / chunk_size))
+  
+  trans_to_fields <- \(df) {df |> pmap(function(...){list(fields = list(...))})}
+  
+  df |>
+    split(ceiling(seq_along(df[,1]) / chunk_size)) |>
+    map(trans_to_fields)|>
+    walk(~ push_bitbl(app_token, tableID, .x))
+}
+
+# 删除多维表格的指定多行
+delt_records <- function(app_token, tableID, record_ids){
+  
+  api <- "{domain}/bitable/v1/apps/{app_token}/tables/{tableID}/records/batch_delete"
+  url <- with(config_, stringr::str_glue(api))
+  
+  response <- 
+    httr::POST(
+      url,
+      config_$req_headers,
+      body = list(records = record_ids),
+      encode = "json"
+    )
+  
+  check_resp(response, "delt_records")
+}
+
+
+# 清空多维表格所有行
+clean_bitbl <- function(app_token, tableID) {
+  
+  chunk_size <- 500
+  
+  ids <- 
+    get_dat_from_bitbl(app_token, tableID) |>
+    pluck("ids")
+  
+  ids_ls <- split(ids,
+                  rep(1: ceiling(length(ids)/ chunk_size),
+                      each = chunk_size,
+                      length.out = length(ids)))
+  
+  ids_ls |>
+    walk(~ delt_records(app_token, tableID, .x))
+}
+
+
+# Message Bot API --------------------------------------------------------------
+# 发送纯文本消息
+send_msg <- function(msg, webhook){
+
+  body <- list(
+    msg_type = "text",
+    content = list(text = msg)
+  )
+  
+  response <-
+    httr::POST(url = webhook,
+               body = list(msg_type = "text",
+                           content = list(text = msg)),
+               encode = "json",
+               add_headers("Content-Type" = "application/json"))
+  
+  check_resp(response, "send_msg")
+}
+
+# 发送富文本消息
+send_post <- function(title, content, webhook){
+  
+  body <- list(msg_type = "post",
+               content = list(
+                 post = list(
+                   zh_cn = list(
+                     title = title,
+                     content = content))))
+  
+  response <-
+    httr::POST(url = webhook,
+               body = body,
+               encode = "json",
+               add_headers("Content-Type" = "application/json"))
+  
+  check_resp(response, "send_post")
+}
+
+
+# Document API -----------------------------------------------------------------
+# 创建云文档，返回文档ID/标题
+create_doc <- function(folder, title) {
+  api = "{domain}/docx/v1/documents/"
+  url <- with(config_, stringr::str_glue(api))
+  
+  body <- list(folder_token = folder,
+               title = title)
+  
+  response <-
+    httr::POST(url,
+               config_$req_headers,
+               body = body,
+               encode = "json")
+  
+  check_resp(response, "create_doc")
+  
+  doc_id <- pluck(content(response), "data", "document", "document_id")
+  doc_title <- pluck(content(response), "data", "document", "title")
+  
+  return(list(doc_id = doc_id, doc_title = doc_title))
+}
+
+# 获取文档内容块,返回response对象
+get_doc_blocks <- function(doc_id){
+  api <-  "{domain}/docx/v1/documents/{doc_id}/blocks"
+  url <- with(config_, stringr::str_glue(api))
+  
+  response <- 
+    httr::GET(url,
+              config_$req_headers
+              )
+  
+  check_resp(response, "get_doc_blocks")
+  
+  return(response)
+}
+
+# 清空文档
+delt_doc_blocks <- function(doc_id){
+  api <- "{domain}/docx/v1/documents/{doc_id}/blocks/{doc_id}/children/batch_delete"
+  url <- with(config_, stringr::str_glue(api))
+  
+  resp <- get_doc_blocks(doc_id)
+  
+  items <- 
+    content(resp) |>
+    purrr::pluck("data", "items")
+  
+  if(length(items) == 1) return(0) # 原本就空
+  
+  childrens <- purrr::pluck(items[[1]], "children")
+  
+  body <- list(start_index = 0,
+               end_index = length(childrens))
+  
+  response <- 
+    httr::DELETE(url,
+                 config_$req_headers,
+                 body = body,
+                 encode = "json")
+}
+
+
+# 创建text_run类型block并写入内容
+# 说明文档：https://open.feishu.cn/document/server-docs/docs/docs/docx-v1/document-block/create
+create_text_run_block <- function(doc_id, block_type, block_name, content, index){
+  api <- "{domain}/docx/v1/documents/{doc_id}/blocks/{doc_id}/children"
+  url <- with(config_, stringr::str_glue(api))
+  
+  expr <- "list(
+    index = {index},
+    children = list(
+      list(
+        block_type = {block_type},
+        {block_name} = list(
+          elements = list(
+            list(
+              text_run = list(
+                content = '{content}'
+              )
+            )
+          ),
+          style = NULL
+        )
+      )
+    )
+  )"
+  
+  body_expr <- stringr::str_glue(expr)
+  
+  body <- eval(parse(text = body_expr))
+  
+  response <-
+    httr::POST(url,
+               config_$req_headers,
+               body = jsonlite::toJSON(body, auto_unbox = TRUE)
+               )
+
+}
+
+# 创建block并写入纯文本
+text_block <- function(doc_id, content, index = -1){
+  resp <- create_text_run_block(doc_id = doc_id,
+                                block_type = 2,
+                                block_name = "text",
+                                content = content,
+                                index = index)
+  
+  check_resp(resp, "text_block")  
+}
+
+# 创建block并写入H标题
+heading_block <- function(doc_id, h, content, index = -1){
+  
+  if(h > 5) send_error_msg("The maximum H heading is 5")
+  
+  resp <- create_text_run_block(doc_id = doc_id,
+                                block_type = 2+h,
+                                block_name = paste0("heading",h),
+                                content = content,
+                                index = index)
+}
+
+# 创建image类型block,返回block_id
+create_image_block <- function(doc_id, index, parent_block_id=NULL){
+  
+  if(is.null(parent_block_id)) parent_block_id <- doc_id
+  
+  api <- "{domain}/docx/v1/documents/{doc_id}/blocks/{parent_block_id}/children"
+  url <- with(config_, stringr::str_glue(api))
+  
+  body <- list(
+    index = index,
+    children = list(
+      list(
+        block_type = 27,
+        image = list(
+          token = ""
+        )
+      )
+    )
+  )
+  
+  response <-
+    httr::POST(url,
+               config_$req_headers,
+               body = jsonlite::toJSON(body, auto_unbox = TRUE)
+    )
+  
+  check_resp(response, "create_image_block")
+  
+  block_id <- 
+    content(response) |> 
+    pluck("data", "children") |>
+    map_vec(pluck("block_id"))
+  
+  return(block_id)
+}
+
+# 上传图片素材到指定parent_block_id,返回file_token
+upload_image_to_block <- function(parent_block_id, image_file){
+  size <- file.info(image_file)$size
+  
+  api <-  "{domain}/drive/v1/medias/upload_all"
+  url <-  with(config_, stringr::str_glue(api))
+  
+  body <- list(
+    file_name = image_file,
+    parent_type = "docx_image",
+    parent_node = parent_block_id,
+    # parent_node = "doxcnbkF2WA00dSwrcvALfYLHWF",
+    size = as.character(size),
+    file = upload_file(image_file)
+  )
+  
+  response <-
+    POST(url,
+         config_$req_headers,
+         body = body, 
+         encode = "multipart")
+  
+  check_resp(response, "upload_image_to_block")
+  
+  file_token <- content(response) |> pluck("data", "file_token")
+  
+  return(file_token)
+}
+
+# 更新block以显示图片素材
+update_image_block <- function(doc_id, block_id, file_token){
+  api <- "{domain}/docx/v1/documents/{doc_id}/blocks/{block_id}"
+  url <- with(config_, stringr::str_glue(api))
+  
+  body <- list(
+    replace_image = list(
+      token = file_token
+    )
+  )
+  
+  response <- 
+    PATCH(url,
+          config_$req_headers,
+          body = body,
+          encode = "json"
+          )
+  
+  check_resp(response, "update_image_block")
+}
+
+# 单张图片插入文档
+# 组合调用函数：创建图片block、上传素材到block、显示block素材
+img_block <- function(doc_id, image_file, index=-1){
+  block_id <- create_image_block(doc_id, index)
+  file_token <- upload_image_to_block(block_id, image_file)
+  update_image_block(doc_id, block_id, file_token)
+}
+
+
+# 创建网格block
