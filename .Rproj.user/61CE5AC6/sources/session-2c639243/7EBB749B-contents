@@ -1,5 +1,6 @@
 default:
-  on_period: 
+  trials: 10
+  crontab:
     - 09:00:00
     - 10:00:00
     - 11:00:00
@@ -11,6 +12,7 @@ default:
     - 19:00:00
     - 20:00:00
     - 21:00:00
+    - 22:00:00
     
   webhook: 
     - https://open.feishu.cn/open-apis/bot/v2/hook/ef72eb0b-7857-4711-bab0-49115d31bbb6
@@ -18,6 +20,6 @@ default:
 gemini:
   api: "http://47.245.107.189/v1beta/models/gemini-pro:generateContent?key="
   token: "AIzaSyBWvTRGqL_xq35cSkHmqcCLoI7r6GaRRRc"
-  prompt: "用幽默有趣的方式,简短表达这段话：现在是{current_time}，该喝一杯水了"
+  prompt: "用幽默有趣的方式,简短表达这段话：现在的时间是{current_time}，该喝一杯水了"
   
   

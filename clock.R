@@ -62,27 +62,27 @@ cnf <- config::get(config = "gemini")
 
 current_time <- format(Sys.time(), "%H:00:00")
 
-if(!current_time %in% cnf$on_period) stop(paste0(current_time, "禁止提醒时段..."))
+if(!current_time %in% cnf$crontab) stop(paste0(current_time, "为禁止提醒时段..."))
 
 prompt <- stringr::str_glue(cnf$prompt) |> as.character()
 
-trials <- TRUE
+trails <- cnf$trails
 
-n <- 0
-
-while(trials){
+while(TRUE){
   msg <- gemini(prompt)
   if(!is.null(msg)) {
     purrr::walk(cnf$webhook, ~ send_msg(msg = msg, webhook = .))
-    trials <- FALSE
+    break
   }else(
-    n <- n+1
+    trails <- trails + 1
   )
  
-  if(n>10) {
-    trials <- FALSE
-    message("尝试次数过多")
-    }
+  if(trials > 10) {
+    message("尝试次数过多...")
+    break
+  }
+  
+  
 }
 
   
