@@ -1,35 +1,35 @@
 library(config)
 library(httr)
 library(tidyverse)
-cnf <- config::get(config = "gemini")
 
-current_time <- format(Sys.time(), "%H:00:00")
-
-if(!current_time %in% cnf$on_period) stop(paste0(current_time, "禁止提醒时段..."))
-
-prompt <- stringr::str_glue(cnf$prompt) |> as.character()
-
-url <- paste0(cnf$api, cnf$token)
-
-headers <- c('Content-Type' = 'application/json')
-
-body <- list(
-  contents = list(
-    list(
-      parts = list(
-        list(
-          text = prompt
+gemini <- function(prompt){
+  url <- paste0(cnf$api, cnf$token)
+  headers <- c('Content-Type' = 'application/json')
+  
+  body <- list(
+    contents = list(
+      list(
+        parts = list(
+          list(
+            text = prompt
+          )
         )
       )
     )
   )
-)
+  
+  response <- POST(url, body = body, encode = "json", verbose())
+  
+  msg <- content(response)[["candidates"]][[1]][["content"]][["parts"]][[1]][["text"]]
+  
+  return(msg)
+}
 
-response <- POST(url, body = body, encode = "json", verbose())
 
-msg <- content(response)[["candidates"]][[1]][["content"]][["parts"]][[1]][["text"]]
 
 send_msg <- function(msg, webhook){
+  
+  print(msg)
   
   body <- list(
     msg_type = "text",
@@ -43,10 +43,48 @@ send_msg <- function(msg, webhook){
                encode = "json",
                add_headers("Content-Type" = "application/json"))
   
+  if(response$status_code != 200){
+    stop(paste0("\n",
+                "status_code ", response$status_code))
+  }
+  
+  if(content(response)$code != 0){
+    stop(paste0("\n",
+                "failed code: ", content(response)$code,
+                "\n",
+                "failed msg: ", content(response)$msg))
+  }
 }
 
-purrr::walk(cnf$webhook, ~ send_msg(msg = msg, webhook = .))
 
+# run --------------------------------------------------------------------------
+cnf <- config::get(config = "gemini")
 
+current_time <- format(Sys.time(), "%H:00:00")
+
+if(!current_time %in% cnf$on_period) stop(paste0(current_time, "禁止提醒时段..."))
+
+prompt <- stringr::str_glue(cnf$prompt) |> as.character()
+
+trials <- TRUE
+
+n <- 0
+
+while(trials){
+  msg <- gemini(prompt)
+  if(!is.null(msg)) {
+    purrr::walk(cnf$webhook, ~ send_msg(msg = msg, webhook = .))
+    trials <- FALSE
+  }else(
+    n <- n+1
+  )
+ 
+  if(n>10) {
+    trials <- FALSE
+    message("尝试次数过多")
+  }
+  
+  
+}
 
   

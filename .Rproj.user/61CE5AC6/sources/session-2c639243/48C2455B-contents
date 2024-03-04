@@ -1,0 +1,18 @@
+
+#' Send error message to somewhere visible
+send_error_msg <- \(msg) stop(msg)
+
+#' Check the response
+check_resp <- function(response, method_name){
+  if(response$status_code != 200){
+    stop(paste0("\n",
+                "status_code ", response$status_code))
+  }
+  
+  if(content(response)$code != 0){
+    stop(paste0("\n",
+                "failed code: ", content(response)$code,
+                "\n",
+                "failed msg: ", content(response)$msg))
+  }
+}

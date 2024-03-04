@@ -1,26 +1,26 @@
 {
-    "id": "2D06B9B4",
-    "path": "~/workspace/R/github/WaterClock/clock.R",
-    "project_path": "clock.R",
+    "id": "48C2455B",
+    "path": "~/workspace/R/hetao/skynet/src/helper.R",
+    "project_path": null,
     "type": "r_source",
     "hash": "0",
     "contents": "",
-    "dirty": true,
-    "created": 1709553461529.0,
+    "dirty": false,
+    "created": 1709557795197.0,
     "source_on_save": false,
-    "relative_order": 2,
+    "relative_order": 4,
     "properties": {
         "source_window_id": "",
         "Source": "Sourced0tluhf5i5gr",
-        "cursorPosition": "86,2",
-        "scrollLine": "45"
+        "cursorPosition": "15,55",
+        "scrollLine": "0"
     },
     "folds": "",
-    "lastKnownWriteTime": 1709558390,
+    "lastKnownWriteTime": 1709281683,
     "encoding": "UTF-8",
     "collab_server": "",
     "source_window": "",
-    "last_content_update": 1709558442485,
+    "last_content_update": 1709281683,
     "read_only": false,
     "read_only_alternatives": []
 }

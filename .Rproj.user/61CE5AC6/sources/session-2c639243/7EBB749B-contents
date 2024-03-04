@@ -10,6 +10,7 @@ default:
     - 18:00:00
     - 19:00:00
     - 20:00:00
+    - 21:00:00
     
   webhook: 
     - https://open.feishu.cn/open-apis/bot/v2/hook/ef72eb0b-7857-4711-bab0-49115d31bbb6
