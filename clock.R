@@ -66,7 +66,7 @@ if(!current_time %in% cnf$crontab) stop(paste0(current_time, "为禁止提醒时
 
 prompt <- stringr::str_glue(cnf$prompt) |> as.character()
 
-trails <- cnf$trails
+trails <- 1
 
 while(TRUE){
   msg <- gemini(prompt)
@@ -74,15 +74,11 @@ while(TRUE){
     purrr::walk(cnf$webhook, ~ send_msg(msg = msg, webhook = .))
     break
   }else(
-    trails <- trails + 1
+    trials <- trials + 1
   )
- 
-  if(trials > 10) {
+  
+  if(trials > cnf$trails) {
     message("尝试次数过多...")
     break
   }
-  
-  
 }
-
-  
