@@ -77,7 +77,7 @@ while(TRUE){
     trials <- trials + 1
   )
   
-  if(trials > cnf$trails) {
+  if(trials > cnf$trials) {
     message("尝试次数过多...")
     break
   }
