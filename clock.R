@@ -66,7 +66,7 @@ if(!current_time %in% cnf$crontab) stop(paste0(current_time, "为禁止提醒时
 
 prompt <- stringr::str_glue(cnf$prompt) |> as.character()
 
-trails <- 1
+trials <- 1
 
 while(TRUE){
   msg <- gemini(prompt)
