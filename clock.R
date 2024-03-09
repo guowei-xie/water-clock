@@ -64,13 +64,23 @@ current_time <- format(Sys.time(), "%H:00:00")
 
 if(!current_time %in% cnf$crontab) stop(paste0(current_time, "为禁止提醒时段..."))
 
-prompt <- stringr::str_glue(cnf$prompt) |> as.character()
+members <- config::get(config = "members")
+
+member <- sample(members, 1)
+
+member_name <- names(member)
+member_id <- member[[1]]
+
+prompt <- stringr::str_glue(paste0(cnf$prompt)) |> as.character()
 
 trials <- 1
 
 while(TRUE){
-  msg <- gemini(prompt)
-  if(!is.null(msg)) {
+  gen_text <- gemini(prompt)
+  at <- stringr::str_glue("<at user_id=\"{member_id}\"></at>")
+  msg <- paste0(gen_text, at)
+  
+  if(!is.null(gen_text)) {
     purrr::walk(cnf$webhook, ~ send_msg(msg = msg, webhook = .))
     break
   }else(
